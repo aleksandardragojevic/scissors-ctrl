@@ -375,24 +375,12 @@ static void ProcessPs2Meccanum() {
     // the robot by setting target rotations.
     auto total = abs(va) + abs(vb) + abs(vc) + abs(vd);
     auto total_pwm = MotorCount * ps2_max_pwm;
+    auto motor_max_pwm = min(MotorMaxPwm, ps2_max_pwm * MotorMaxOverFactor);
 
-    auto pwm_a = min(
-        total_pwm * va / total,
-        ps2_max_pwm * MotorMaxOverFactor);
-    auto pwm_b = min(
-        total_pwm * vb / total,
-        ps2_max_pwm * MotorMaxOverFactor);
-    auto pwm_c = min(
-        total_pwm * vc / total,
-        ps2_max_pwm * MotorMaxOverFactor);
-    auto pwm_d = min(
-        total_pwm * vd / total,
-        ps2_max_pwm * MotorMaxOverFactor);
-
-    motor_a.SetDirectedPwm(pwm_a, MotorMaxPwm);
-    motor_b.SetDirectedPwm(pwm_b, MotorMaxPwm);
-    motor_c.SetDirectedPwm(pwm_c, MotorMaxPwm);
-    motor_d.SetDirectedPwm(pwm_d, MotorMaxPwm);
+    motor_a.SetDirectedPwm(total_pwm * va / total, motor_max_pwm);
+    motor_b.SetDirectedPwm(total_pwm * vb / total, motor_max_pwm);
+    motor_c.SetDirectedPwm(total_pwm * vc / total, motor_max_pwm);
+    motor_d.SetDirectedPwm(total_pwm * vd / total, motor_max_pwm);
 
     motor_change = true;
 }

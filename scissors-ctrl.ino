@@ -7,27 +7,20 @@
 
 static constexpr bool GoSlow = false;
 
+#include "defs.h"
+#include "scissors_time.h"
 #include "ps2_ctrl.h"
-#include "motor_ctrl.h"
+#include "scissors_motors.h"
 #include "log.h"
 
-//
-// Types.
-//
-using TimeUnits = unsigned long;
+static constexpr bool DontMove = false;
+using ScissorsMotors = ScissorsMotorsConfig<DontMove>;
 
 //
 // Constants.
 //
-static constexpr TimeUnits UsInS = 1000000ul;
-static constexpr TimeUnits UsInMs = 1000ul;
-
-static constexpr TimeUnits VeryLongPeriod = 120 * UsInS;
-
 static constexpr TimeUnits Ps2CheckPeriod = 10 * UsInMs;
 static constexpr TimeUnits SerialCheckPeriod = 10 * UsInMs;
-static constexpr TimeUnits MotorChangeMinPeriod = 20 * UsInMs;
-static constexpr TimeUnits MotorsOffDelay = 50 * UsInMs;
 
 static constexpr byte MotorMinPwm = 20;
 static constexpr byte MotorStartMaxPwm = 60;
@@ -42,26 +35,9 @@ static constexpr byte Ps2MidY = 128;
 static constexpr byte Ps2NormalizeFactor = 127;
 static constexpr byte Ps2Tolerance = 5;
 
-static constexpr int MaxByteVal = 0xff;
-
 //
 // Data used in the loop. All times are in micro-seconds.
 //
-
-// state of each motor
-MotorState motor_a;
-MotorState motor_b;
-MotorState motor_c;
-MotorState motor_d;
-// set if any of the motors is on
-bool motors_on;
-// set if motor change is pending
-bool motor_change;
-// next time motor change will happen
-TimeUnits motor_change_time;
-// next time motors will go off
-TimeUnits motor_off_time;
-
 // next time to process ps2
 TimeUnits next_ps2_process_time;
 
@@ -70,12 +46,6 @@ TimeUnits next_serial_process_time;
 
 // current time
 TimeUnits now;
-
-static bool IsTimeAfter(TimeUnits time, TimeUnits ref);
-
-static void MotorsApplyState();
-static void MotorsOff();
-static void MotorsOn();
 
 static void ProcessPs2();
 static void ProcessSerial();
@@ -89,80 +59,32 @@ void setup() {
 
     Ps2Setup();
 
-    MotorSetup();
+    ScissorsMotors::Setup();
 
-    MotorsOff();
+    ScissorsMotors::Off();
 }
 
 void loop() {
-    now = micros();
+    now = ReadTime();
 
     if(IsTimeAfter(now, next_ps2_process_time)) {
         ProcessPs2();
 
-        now = micros();
+        now = ReadTime();
         next_ps2_process_time = now + Ps2CheckPeriod;
     }
 
     if(IsTimeAfter(now, next_serial_process_time)) {
         ProcessSerial();
 
-        now = micros();
+        now = ReadTime();
         next_serial_process_time = now + SerialCheckPeriod;
     }
 
-    if(IsTimeAfter(now, motor_change_time)) {
-        if(motor_change) {
-            MotorsOn();
-
-            motor_change = false;
-
-            now = micros();
-            motor_change_time = now + MotorChangeMinPeriod;
-            motor_off_time = now + MotorsOffDelay;
-        } else {
-            // keep rolling time forward to avoid
-            // very large differences in time
-            motor_change_time = now;
-        }
-    }
-
-    if(motors_on && IsTimeAfter(now, motor_off_time)) {
-        MotorsOff();
-    }
+    now = ScissorsMotors::LoopProcess(now);
 
     // no need to sleep - keep servicing IO as fast as we can
     // and use the per-section time keeping to know when to check them
-}
-
-
-static bool IsTimeAfter(TimeUnits time, TimeUnits ref) {
-    // account for clock wrap around which occurs every ~70 minutes
-    return (time > ref) && (time - ref < VeryLongPeriod);
-}
-
-static void MotorsApplyState() {
-    MotorA::ApplyState(motor_a);
-    MotorB::ApplyState(motor_b);
-    MotorC::ApplyState(motor_c);
-    MotorD::ApplyState(motor_d);
-}
-
-static void MotorsOff() {
-    motor_a.direction = MotorDirection::Stopped;
-    motor_b.direction = MotorDirection::Stopped;
-    motor_c.direction = MotorDirection::Stopped;
-    motor_d.direction = MotorDirection::Stopped;
-
-    MotorsApplyState();
-
-    motors_on = false;
-}
-
-static void MotorsOn() {
-    MotorsApplyState();
-
-    motors_on = true;
 }
 
 //
@@ -178,7 +100,6 @@ static void ProcessSerial() {
 static byte Ps2CalcPwm(byte stick_pos);
 static bool Ps2IsStickMoved(byte val);
 static void Ps2Readout();
-static byte TotalPwm();
 static void ProcessPs2MotorPairs();
 static void ProcessPs2ForwardBackward();
 static void ProcessPs2Meccanum();
@@ -218,8 +139,8 @@ static void ProcessPs2() {
 }
 
 static void Ps2Readout() {
-    if(motors_on) {
-        auto total_pwm = TotalPwm();
+    if(ScissorsMotors::IsAnyMotorOn()) {
+        auto total_pwm = ScissorsMotors::TotalPwm();
         Ps2SetLargeVibrate(total_pwm);
 
         if(total_pwm == MaxByteVal) {
@@ -232,20 +153,6 @@ static void Ps2Readout() {
     }
 
     Ps2Read();
-}
-
-static byte TotalPwm() {
-    auto pwm =
-        motor_a.RealPwm() +
-        motor_b.RealPwm() +
-        motor_c.RealPwm() +
-        motor_d.RealPwm();
-
-    if(pwm > MaxByteVal) {
-        pwm = MaxByteVal;
-    }
-
-    return pwm;
 }
 
 template<bool SlowDrive>
@@ -278,44 +185,46 @@ static void ProcessPs2MotorPairs() {
     if(left_y < Ps2MidY - Ps2Tolerance) {
         auto pwm = Ps2CalcPwm<GoSlow>(left_y);
 
-        motor_a.SetDirectedPwm(pwm);
-        motor_c.SetDirectedPwm(pwm);
+        ScissorsMotors::A::SetDirectedPwm(pwm);
+        ScissorsMotors::C::SetDirectedPwm(pwm);
   
-        motor_change = true;
+        ScissorsMotors::SetMotorChange();
     } else if(left_y > Ps2MidY + Ps2Tolerance) {
         auto pwm = Ps2CalcPwm<GoSlow>(left_y);
 
-        motor_a.SetDirectedPwm(-pwm);
-        motor_c.SetDirectedPwm(-pwm);
+        ScissorsMotors::A::SetDirectedPwm(-pwm);
+        ScissorsMotors::C::SetDirectedPwm(-pwm);
 
-        motor_change = true;
+        ScissorsMotors::SetMotorChange();
     } else {
-        if(motor_a.direction != MotorDirection::Stopped) {
-            motor_a.SetStopped();
-            motor_c.SetStopped();
-            motor_change = true;
+        if(!ScissorsMotors::A::IsStopped()) {
+            ScissorsMotors::A::SetStopped();
+            ScissorsMotors::C::SetStopped();
+
+            ScissorsMotors::SetMotorChange();
         }
     }
 
     if(right_y < Ps2MidY - Ps2Tolerance) {
         auto pwm = Ps2CalcPwm<GoSlow>(right_y);
 
-        motor_b.SetDirectedPwm(pwm);
-        motor_d.SetDirectedPwm(pwm);
+        ScissorsMotors::B::SetDirectedPwm(pwm);
+        ScissorsMotors::D::SetDirectedPwm(pwm);
   
-        motor_change = true;
+        ScissorsMotors::SetMotorChange();
     } else if(right_y > Ps2MidY + Ps2Tolerance) {
         auto pwm = Ps2CalcPwm<GoSlow>(right_y);
 
-        motor_b.SetDirectedPwm(-pwm);
-        motor_d.SetDirectedPwm(-pwm);
+        ScissorsMotors::B::SetDirectedPwm(-pwm);
+        ScissorsMotors::D::SetDirectedPwm(-pwm);
     
-        motor_change = true;
+        ScissorsMotors::SetMotorChange();
     } else {
-        if(motor_b.direction != MotorDirection::Stopped) {
-            motor_b.SetStopped();
-            motor_d.SetStopped();
-            motor_change = true;
+        if(!ScissorsMotors::B::IsStopped()) {
+            ScissorsMotors::B::SetStopped();
+            ScissorsMotors::D::SetStopped();
+
+            ScissorsMotors::SetMotorChange();
         }
     }
 }
@@ -324,17 +233,17 @@ static void ProcessPs2ForwardBackward() {
     auto left_y = Ps2Analog(PSS_LY);
 
     if(left_y < Ps2MidY - Ps2Tolerance) {
-        motor_a.SetDirectedPwm(SlowPwm);
-        motor_b.SetDirectedPwm(SlowPwm);
-        motor_c.SetDirectedPwm(SlowPwm);
-        motor_d.SetDirectedPwm(SlowPwm);
-        motor_change = true;
+        ScissorsMotors::A::SetDirectedPwm(SlowPwm);
+        ScissorsMotors::B::SetDirectedPwm(SlowPwm);
+        ScissorsMotors::C::SetDirectedPwm(SlowPwm);
+        ScissorsMotors::D::SetDirectedPwm(SlowPwm);
+        ScissorsMotors::SetMotorChange();
     } else if(left_y > Ps2MidY + Ps2Tolerance) {
-        motor_a.SetDirectedPwm(-SlowPwm);
-        motor_b.SetDirectedPwm(-SlowPwm);
-        motor_c.SetDirectedPwm(-SlowPwm);
-        motor_d.SetDirectedPwm(-SlowPwm);
-        motor_change = true;
+        ScissorsMotors::A::SetDirectedPwm(-SlowPwm);
+        ScissorsMotors::B::SetDirectedPwm(-SlowPwm);
+        ScissorsMotors::C::SetDirectedPwm(-SlowPwm);
+        ScissorsMotors::D::SetDirectedPwm(-SlowPwm);
+        ScissorsMotors::SetMotorChange();
     }
 }
 
@@ -377,10 +286,18 @@ static void ProcessPs2Meccanum() {
     auto total_pwm = MotorCount * ps2_max_pwm;
     auto motor_max_pwm = min(MotorMaxPwm, ps2_max_pwm * MotorMaxOverFactor);
 
-    motor_a.SetDirectedPwm(total_pwm * va / total, motor_max_pwm);
-    motor_b.SetDirectedPwm(total_pwm * vb / total, motor_max_pwm);
-    motor_c.SetDirectedPwm(total_pwm * vc / total, motor_max_pwm);
-    motor_d.SetDirectedPwm(total_pwm * vd / total, motor_max_pwm);
+    ScissorsMotors::A::SetBoundedDirectedPwm(
+        total_pwm * va / total,
+        motor_max_pwm);
+    ScissorsMotors::B::SetBoundedDirectedPwm(
+        total_pwm * vb / total,
+        motor_max_pwm);
+    ScissorsMotors::C::SetBoundedDirectedPwm(
+        total_pwm * vc / total,
+        motor_max_pwm);
+    ScissorsMotors::D::SetBoundedDirectedPwm(
+        total_pwm * vd / total,
+        motor_max_pwm);
 
-    motor_change = true;
+    ScissorsMotors::SetMotorChange();
 }

@@ -6,79 +6,91 @@
 
 #pragma once
 
-enum class MotorDirection {
-    Stopped,
-    Forward,
-    Backward,
-};
-
 // This is static as we don't want multiple motors on the same pins.
 template<
     char Name,
     byte PinPwm,
     byte PinDir1,
     byte PinDir2,
-    bool DontMove>
+    bool DontMove,
+    int MaxAbsPwm = 240>
 class Motor {
 public:
-    static void Setup() {
+    static constexpr int MaxAbsolutePwm = MaxAbsPwm;
+
+    static Motor &Instance() {
+        return instance;
+    }
+
+    void Setup() {
         pinMode(PinPwm, OUTPUT);
         pinMode(PinDir1, OUTPUT);
         pinMode(PinDir2, OUTPUT);
+
+        ApplyStop();
+
+        pwm = last_pwm = 0;
     }
 
-    static void SetDirectedPwm(int val) {
+    void SetPwm(int val) {
+        SetBoundedPwm(val, MaxAbsPwm);
+    }
+
+    void SetBoundedPwm(int val, int abs_bound) {
         if(val < 0) {
-            direction = MotorDirection::Backward;
-            pwm = static_cast<byte>(-val);
+            pwm = max(val, -abs_bound);
         } else {
-            direction = MotorDirection::Forward;
-            pwm = static_cast<byte>(val);
+            pwm = min(val, abs_bound);
         }
     }
 
-    static void SetBoundedDirectedPwm(int val, int bound) {
-        if(val < 0) {
-            direction = MotorDirection::Backward;
-            pwm = min(-val, bound);
-        } else {
-            direction = MotorDirection::Forward;
-            pwm = min(val, bound);
-        }
-    }
-
-    static void SetStopped() {
-        direction = MotorDirection::Stopped;
+    void SetStopped() {
         pwm = 0;
     }
 
-    static void Apply() {
-        if(direction == MotorDirection::Forward) {
-            Forward(pwm);
-        } else if(direction == MotorDirection::Backward) {
-            Backward(pwm);
-        } else {
-            Stop();
+    void Apply() {
+        if(last_pwm == pwm) {
+            return;
         }
+
+        if(IsGoingForward()) {
+            ApplyForward();
+        } else if(IsGoingBackward()) {
+            ApplyBackward();
+        } else {
+            ApplyStop();
+        }
+
+        last_pwm = pwm;
     }
 
-    static byte GetPwm() {
+    int GetPwm() {
         return pwm;
     }
 
-    static MotorDirection GetDirection() {
-        return direction;
+    bool IsGoingBackward() const {
+        return pwm < 0;
     }
 
-    static bool IsStopped() {
-        return direction == MotorDirection::Stopped;
+    bool IsGoingForward() const {
+        return pwm > 0;
+    }
+
+    bool IsStopped() const {
+        return pwm == 0;
     }
 
 private:
-    static void Forward(int pwm) {
+    Motor()
+            : pwm(0) {
+        // empty
+    }
+
+    void ApplyForward() {
         if(DontMove) {
+            Serial.print("Motor ");
             Serial.print(Name);
-            Serial.print(" forward ");
+            Serial.print(" ");
             Serial.println(pwm, DEC);
         } else {
             digitalWrite(PinDir1, LOW);
@@ -87,19 +99,20 @@ private:
         }
     }
 
-    static void Backward(int pwm) {
+    void ApplyBackward() {
         if(DontMove) {
+            Serial.print("Motor ");
             Serial.print(Name);
-            Serial.print(" backward ");
+            Serial.print(" ");
             Serial.println(pwm, DEC);
         } else {
             digitalWrite(PinDir1, HIGH);
             digitalWrite(PinDir2, LOW);
-            analogWrite(PinPwm, pwm);
+            analogWrite(PinPwm, -pwm);
         }
     }
 
-    static void Stop() {
+    void ApplyStop() {
         if(DontMove) {
             Serial.print(Name);
             Serial.println(" stopped");
@@ -110,12 +123,12 @@ private:
         }
     }
 
-    static MotorDirection direction;
-    static byte pwm;
+    int last_pwm;
+    int pwm;
+
+    static Motor instance;
 };
 
-template<char Name, byte PinPwm, byte PinDir1, byte PinDir2, bool DontMove>
-MotorDirection Motor<Name, PinPwm, PinDir1, PinDir2, DontMove>::direction;
-
-template<char Name, byte PinPwm, byte PinDir1, byte PinDir2, bool DontMove>
-byte Motor<Name, PinPwm, PinDir1, PinDir2, DontMove>::pwm;
+template<char Name, byte PinPwm, byte PinDir1, byte PinDir2, bool DontMove, int MaxAbsPwm>
+Motor<Name, PinPwm, PinDir1, PinDir2, DontMove, MaxAbsPwm>
+Motor<Name, PinPwm, PinDir1, PinDir2, DontMove, MaxAbsPwm>::instance;

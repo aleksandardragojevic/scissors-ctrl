@@ -10,11 +10,21 @@ static constexpr bool GoSlow = false;
 #include "defs.h"
 #include "scissors_time.h"
 #include "ps2_ctrl.h"
-#include "scissors_motors.h"
+#include "wheel_motors.h"
+#include "camera_servos.h"
+#include "ab_encoder.h"
 #include "log.h"
 
-static constexpr bool DontMove = false;
-using ScissorsMotors = ScissorsMotorsConfig<DontMove>;
+static constexpr bool DontMoveMotors = false;
+auto &motors = WheelMotors<DontMoveMotors>::Instance();
+
+static constexpr bool DontMoveCameraServos = false;
+auto &camera_servos = CameraServos<DontMoveCameraServos>::Instance();
+
+using EncoderA = AbEncoder<'A', 18, 31, 720>;
+using EncoderB = AbEncoder<'B', 19, 38, 720, true>;
+using EncoderC = AbEncoder<'C', 3, 49, 720>;
+using EncoderD = AbEncoder<'D', 2, 23, 720, true>;
 
 //
 // Constants.
@@ -24,11 +34,17 @@ static constexpr TimeUnits SerialCheckPeriod = 10 * UsInMs;
 
 static constexpr byte MotorMinPwm = 20;
 static constexpr byte MotorStartMaxPwm = 60;
-static constexpr byte MotorMaxPwm = 200;
+static constexpr byte MotorMaxPwm = 240;
+static constexpr byte MotorPwmStepIncrement = 10;
 static constexpr byte MotorCount = 4;
 static constexpr float MotorMaxOverFactor = 1.2;
 
 static constexpr byte SlowPwm = 70;
+
+static constexpr byte CamerServoMinStep = 1;
+static constexpr byte CamerServoMaxStep = 180;
+static constexpr byte CamerServoDefaultStep = 2;
+static constexpr byte CamerServoStepIncrement = 1;
 
 static constexpr byte Ps2MidX = 127;
 static constexpr byte Ps2MidY = 128;
@@ -59,9 +75,14 @@ void setup() {
 
     Ps2Setup();
 
-    ScissorsMotors::Setup();
+    motors.Setup();
 
-    ScissorsMotors::Off();
+    camera_servos.Setup();
+
+    EncoderA::Setup();
+    EncoderB::Setup();
+    EncoderC::Setup();
+    EncoderD::Setup();
 }
 
 void loop() {
@@ -81,7 +102,20 @@ void loop() {
         next_serial_process_time = now + SerialCheckPeriod;
     }
 
-    now = ScissorsMotors::LoopProcess(now);
+    now = motors.LoopProcess(now);
+
+    now = camera_servos.LoopProcess(now);
+
+    now = EncoderA::LoopProcess(now);
+    now = EncoderB::LoopProcess(now);
+    now = EncoderC::LoopProcess(now);
+    now = EncoderD::LoopProcess(now);
+
+    EncoderA::WriteStateToSerial();
+    EncoderB::WriteStateToSerial();
+    EncoderC::WriteStateToSerial();
+    EncoderD::WriteStateToSerial();
+    Serial.println("");
 
     // no need to sleep - keep servicing IO as fast as we can
     // and use the per-section time keeping to know when to check them
@@ -100,6 +134,8 @@ static void ProcessSerial() {
 static byte Ps2CalcPwm(byte stick_pos);
 static bool Ps2IsStickMoved(byte val);
 static void Ps2Readout();
+static void ProcessPs2CameraServos();
+static void ProcessPs2WheelMotors();
 static void ProcessPs2MotorPairs();
 static void ProcessPs2ForwardBackward();
 static void ProcessPs2Meccanum();
@@ -115,35 +151,25 @@ static Ps2ProcessFun ps2_fun[] = {
 static constexpr size_t Ps2FunCount = sizeof(ps2_fun) / sizeof(ps2_fun[0]);
 
 static byte ps2_fun_idx = 0;
+static byte ps2_max_pwm = MotorStartMaxPwm;
 
-byte ps2_max_pwm = MotorStartMaxPwm;
+static byte cam_servo_step = CamerServoDefaultStep;
 
 static void ProcessPs2() {
     Ps2Readout();
 
-    if(Ps2ButtonPressed(PSB_TRIANGLE)) {
-        ps2_max_pwm = min(MotorMaxPwm, ps2_max_pwm + 10);
-    }
+    ProcessPs2WheelMotors();
 
-    if(Ps2ButtonPressed(PSB_CROSS)) {
-        ps2_max_pwm = max(MotorMinPwm, ps2_max_pwm - 10);
-    }
-
-    if(Ps2ButtonPressed(PSB_SELECT)) {
-        if(++ps2_fun_idx == Ps2FunCount) {
-            ps2_fun_idx = 0;
-        }
-    }
-
-    ps2_fun[ps2_fun_idx]();
+    ProcessPs2CameraServos();
 }
 
 static void Ps2Readout() {
-    if(ScissorsMotors::IsAnyMotorOn()) {
-        auto total_pwm = ScissorsMotors::TotalPwm();
-        Ps2SetLargeVibrate(total_pwm);
+    auto motor_pwm = motors.TotalAbsolutePwm();
 
-        if(total_pwm == MaxByteVal) {
+    if(motor_pwm) {
+        Ps2SetLargeVibrate(motor_pwm);
+
+        if(motor_pwm == MaxByteVal) {
             Ps2SetSmallVibrate(true);
 
         }
@@ -153,6 +179,57 @@ static void Ps2Readout() {
     }
 
     Ps2Read();
+}
+
+static void ProcessPs2CameraServos() {
+    if(Ps2ButtonPressed(PSB_L1)) {
+        cam_servo_step = min(
+            CamerServoMaxStep,
+            cam_servo_step + CamerServoStepIncrement);
+    }
+
+    if(Ps2ButtonPressed(PSB_L2)) {
+        cam_servo_step = max(
+            CamerServoMinStep,
+            cam_servo_step - CamerServoStepIncrement);
+    }
+
+    if(Ps2Button(PSB_PAD_LEFT)) {
+        camera_servos.Left(cam_servo_step);
+    }
+
+    if(Ps2Button(PSB_PAD_RIGHT)) {
+        camera_servos.Right(cam_servo_step);
+    }
+
+    if(Ps2Button(PSB_PAD_UP)) {
+        camera_servos.Up(cam_servo_step);
+    }
+
+    if(Ps2Button(PSB_PAD_DOWN)) {
+        camera_servos.Down(cam_servo_step);
+    }
+}
+
+static void ProcessPs2WheelMotors() {
+    if(Ps2ButtonPressed(PSB_R1)) {
+        ps2_max_pwm = min(MotorMaxPwm, ps2_max_pwm + MotorPwmStepIncrement);
+    }
+
+    if(Ps2ButtonPressed(PSB_R2)) {
+        ps2_max_pwm = max(MotorMinPwm, ps2_max_pwm - MotorPwmStepIncrement);
+    }
+
+    if(Ps2ButtonPressed(PSB_SELECT)) {
+        if(++ps2_fun_idx == Ps2FunCount) {
+            ps2_fun_idx = 0;
+        }
+
+        Serial.print("Changed ps2_fun index to ");
+        Serial.println(ps2_fun_idx, DEC);
+    }
+
+    ps2_fun[ps2_fun_idx]();
 }
 
 template<bool SlowDrive>
@@ -185,71 +262,49 @@ static void ProcessPs2MotorPairs() {
     if(left_y < Ps2MidY - Ps2Tolerance) {
         auto pwm = Ps2CalcPwm<GoSlow>(left_y);
 
-        ScissorsMotors::A::SetDirectedPwm(pwm);
-        ScissorsMotors::C::SetDirectedPwm(pwm);
-  
-        ScissorsMotors::SetMotorChange();
+        motors.A().SetPwm(pwm);
+        motors.C().SetPwm(pwm);
     } else if(left_y > Ps2MidY + Ps2Tolerance) {
         auto pwm = Ps2CalcPwm<GoSlow>(left_y);
 
-        ScissorsMotors::A::SetDirectedPwm(-pwm);
-        ScissorsMotors::C::SetDirectedPwm(-pwm);
-
-        ScissorsMotors::SetMotorChange();
-    } else {
-        if(!ScissorsMotors::A::IsStopped()) {
-            ScissorsMotors::A::SetStopped();
-            ScissorsMotors::C::SetStopped();
-
-            ScissorsMotors::SetMotorChange();
-        }
+        motors.A().SetPwm(-pwm);
+        motors.C().SetPwm(-pwm);
     }
 
     if(right_y < Ps2MidY - Ps2Tolerance) {
         auto pwm = Ps2CalcPwm<GoSlow>(right_y);
 
-        ScissorsMotors::B::SetDirectedPwm(pwm);
-        ScissorsMotors::D::SetDirectedPwm(pwm);
-  
-        ScissorsMotors::SetMotorChange();
+        motors.B().SetPwm(pwm);
+        motors.D().SetPwm(pwm);
     } else if(right_y > Ps2MidY + Ps2Tolerance) {
         auto pwm = Ps2CalcPwm<GoSlow>(right_y);
 
-        ScissorsMotors::B::SetDirectedPwm(-pwm);
-        ScissorsMotors::D::SetDirectedPwm(-pwm);
-    
-        ScissorsMotors::SetMotorChange();
-    } else {
-        if(!ScissorsMotors::B::IsStopped()) {
-            ScissorsMotors::B::SetStopped();
-            ScissorsMotors::D::SetStopped();
-
-            ScissorsMotors::SetMotorChange();
-        }
+        motors.B().SetPwm(-pwm);
+        motors.D().SetPwm(-pwm);
     }
 }
 
 static void ProcessPs2ForwardBackward() {
-    auto left_y = Ps2Analog(PSS_LY);
+    auto left_y = Ps2Analog(PSS_RY);
 
     if(left_y < Ps2MidY - Ps2Tolerance) {
-        ScissorsMotors::A::SetDirectedPwm(SlowPwm);
-        ScissorsMotors::B::SetDirectedPwm(SlowPwm);
-        ScissorsMotors::C::SetDirectedPwm(SlowPwm);
-        ScissorsMotors::D::SetDirectedPwm(SlowPwm);
-        ScissorsMotors::SetMotorChange();
+        motors.A().SetPwm(SlowPwm);
+        motors.B().SetPwm(SlowPwm);
+        motors.C().SetPwm(SlowPwm);
+        motors.D().SetPwm(SlowPwm);
     } else if(left_y > Ps2MidY + Ps2Tolerance) {
-        ScissorsMotors::A::SetDirectedPwm(-SlowPwm);
-        ScissorsMotors::B::SetDirectedPwm(-SlowPwm);
-        ScissorsMotors::C::SetDirectedPwm(-SlowPwm);
-        ScissorsMotors::D::SetDirectedPwm(-SlowPwm);
-        ScissorsMotors::SetMotorChange();
+        motors.A().SetPwm(-SlowPwm);
+        motors.B().SetPwm(-SlowPwm);
+        motors.C().SetPwm(-SlowPwm);
+        motors.D().SetPwm(-SlowPwm);
     }
 }
 
 static constexpr double Ps2MeccanumRotateFactor = 0.3;
 
 static void ProcessPs2Meccanum() {
+    auto start = ReadTime();
+
     int right_x = Ps2Analog(PSS_RX);
     int right_y = Ps2Analog(PSS_RY);
     int left_x = Ps2Analog(PSS_LX);
@@ -263,7 +318,7 @@ static void ProcessPs2Meccanum() {
         return;
     }
 
-    // Calculate intensities. They are normalized to (-2, 2).
+    // Calculate intensities. They are normalized.
     auto angle = atan2(ry, rx);
 
     auto rxn = static_cast<double>(rx) / Ps2NormalizeFactor;
@@ -286,18 +341,19 @@ static void ProcessPs2Meccanum() {
     auto total_pwm = MotorCount * ps2_max_pwm;
     auto motor_max_pwm = min(MotorMaxPwm, ps2_max_pwm * MotorMaxOverFactor);
 
-    ScissorsMotors::A::SetBoundedDirectedPwm(
+    auto end = ReadTime();
+    Serial.println(end - start, DEC);
+
+    motors.A().SetBoundedPwm(
         total_pwm * va / total,
         motor_max_pwm);
-    ScissorsMotors::B::SetBoundedDirectedPwm(
+    motors.B().SetBoundedPwm(
         total_pwm * vb / total,
         motor_max_pwm);
-    ScissorsMotors::C::SetBoundedDirectedPwm(
+    motors.C().SetBoundedPwm(
         total_pwm * vc / total,
         motor_max_pwm);
-    ScissorsMotors::D::SetBoundedDirectedPwm(
+    motors.D().SetBoundedPwm(
         total_pwm * vd / total,
         motor_max_pwm);
-
-    ScissorsMotors::SetMotorChange();
 }

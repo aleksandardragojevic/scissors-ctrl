@@ -10,6 +10,7 @@ using TimeUnits = unsigned long;
 
 static constexpr TimeUnits UsInS = 1000000ul;
 static constexpr TimeUnits UsInMs = 1000ul;
+static constexpr TimeUnits SecInMin = 60ul;
 
 static constexpr TimeUnits VeryLongPeriod = 120 * UsInS;
 

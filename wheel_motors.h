@@ -6,15 +6,23 @@
 
 #pragma once
 
-#include "motor_timed.h"
+#include "motor_direct_ctrl.h"
+#include "motor_speed_ctrl.h"
 #include "scissors_time.h"
 
 template<bool DontMove>
 struct WheelMotors {
-    using MotorA = MotorTimed<'A', 12, 34, 35, DontMove>;
-    using MotorB = MotorTimed<'B', 8, 36, 37, DontMove>;
-    using MotorC = MotorTimed<'C', 9, 43, 42, DontMove>;
-    using MotorD = MotorTimed<'D', 5, 27, 26, DontMove>;
+#ifdef USE_DIRECT_CTRL
+    using MotorA = MotorDirectCtrl<'A', 12, 34, 35, DontMove>;
+    using MotorB = MotorDirectCtrl<'B', 8, 36, 37, DontMove>;
+    using MotorC = MotorDirectCtrl<'C', 9, 43, 42, DontMove>;
+    using MotorD = MotorDirectCtrl<'D', 5, 27, 26, DontMove>;
+#else
+    using MotorA = MotorSpeedCtrl<'A', 12, 34, 35, 18, 31, DontMove, 720>;
+    using MotorB = MotorSpeedCtrl<'B', 8, 36, 37, 19, 38, DontMove, 720, true>;
+    using MotorC = MotorSpeedCtrl<'C', 9, 43, 42, 3, 49, DontMove, 720>;
+    using MotorD = MotorSpeedCtrl<'D', 5, 27, 26, 2, 23, DontMove, 720, true>;
+#endif /* USE_DIRECT_CTRL */
 
     static WheelMotors &Instance() {
         return instance;
@@ -42,17 +50,6 @@ struct WheelMotors {
     MotorD &D() {
         return d;
     }
-
-    // static void Off() {
-    //     A::SetStopped();
-    //     B::SetStopped();
-    //     C::SetStopped();
-    //     D::SetStopped();
-
-    //     Apply();
-
-    //     motors_on = false;
-    // }
 
     void On() {
         a.Apply();

@@ -21,11 +21,6 @@ auto &motors = WheelMotors<DontMoveMotors>::Instance();
 static constexpr bool DontMoveCameraServos = false;
 auto &camera_servos = CameraServos<DontMoveCameraServos>::Instance();
 
-using EncoderA = AbEncoder<'A', 18, 31, 720>;
-using EncoderB = AbEncoder<'B', 19, 38, 720, true>;
-using EncoderC = AbEncoder<'C', 3, 49, 720>;
-using EncoderD = AbEncoder<'D', 2, 23, 720, true>;
-
 //
 // Constants.
 //
@@ -66,6 +61,10 @@ TimeUnits now;
 static void ProcessPs2();
 static void ProcessSerial();
 
+static void PrintStats();
+template<typename Motor>
+static void PrintMotorStats(const Motor &motor);
+
 void setup() {
     Serial.begin(115200);
     Serial.println("Starting Scissors controller");
@@ -79,10 +78,18 @@ void setup() {
 
     camera_servos.Setup();
 
-    EncoderA::Setup();
-    EncoderB::Setup();
-    EncoderC::Setup();
-    EncoderD::Setup();
+
+
+    // Serial.print("current-rpm ");
+    // Serial.print("target-rpm ");
+    // Serial.print("pwm ");
+    Serial.print("err ");
+    // Serial.print("err-sum ");
+    Serial.print("delta-p ");
+    Serial.print("delta-i ");
+    Serial.print("delta-d ");
+    Serial.print("delta ");
+    Serial.println("");
 }
 
 void loop() {
@@ -106,16 +113,7 @@ void loop() {
 
     now = camera_servos.LoopProcess(now);
 
-    now = EncoderA::LoopProcess(now);
-    now = EncoderB::LoopProcess(now);
-    now = EncoderC::LoopProcess(now);
-    now = EncoderD::LoopProcess(now);
-
-    EncoderA::WriteStateToSerial();
-    EncoderB::WriteStateToSerial();
-    EncoderC::WriteStateToSerial();
-    EncoderD::WriteStateToSerial();
-    Serial.println("");
+    PrintStats();
 
     // no need to sleep - keep servicing IO as fast as we can
     // and use the per-section time keeping to know when to check them
@@ -139,6 +137,7 @@ static void ProcessPs2WheelMotors();
 static void ProcessPs2MotorPairs();
 static void ProcessPs2ForwardBackward();
 static void ProcessPs2Meccanum();
+static int BoundedValue(int val, int abs_bound);
 
 using Ps2ProcessFun = void (*)();
 
@@ -196,18 +195,18 @@ static void ProcessPs2CameraServos() {
 
     if(Ps2Button(PSB_PAD_LEFT)) {
         camera_servos.Left(cam_servo_step);
-    }
-
-    if(Ps2Button(PSB_PAD_RIGHT)) {
+    } else if(Ps2Button(PSB_PAD_RIGHT)) {
         camera_servos.Right(cam_servo_step);
+    } else {
+        camera_servos.StopLeftRight();
     }
 
     if(Ps2Button(PSB_PAD_UP)) {
         camera_servos.Up(cam_servo_step);
-    }
-
-    if(Ps2Button(PSB_PAD_DOWN)) {
+    } else if(Ps2Button(PSB_PAD_DOWN)) {
         camera_servos.Down(cam_servo_step);
+    } else {
+        camera_servos.StopUpDown();
     }
 }
 
@@ -262,25 +261,31 @@ static void ProcessPs2MotorPairs() {
     if(left_y < Ps2MidY - Ps2Tolerance) {
         auto pwm = Ps2CalcPwm<GoSlow>(left_y);
 
-        motors.A().SetPwm(pwm);
-        motors.C().SetPwm(pwm);
+        motors.A().SetTarget(pwm);
+        motors.C().SetTarget(pwm);
     } else if(left_y > Ps2MidY + Ps2Tolerance) {
         auto pwm = Ps2CalcPwm<GoSlow>(left_y);
 
-        motors.A().SetPwm(-pwm);
-        motors.C().SetPwm(-pwm);
+        motors.A().SetTarget(-pwm);
+        motors.C().SetTarget(-pwm);
+    } else {
+        motors.A().SetTarget(0);
+        motors.C().SetTarget(0);
     }
 
     if(right_y < Ps2MidY - Ps2Tolerance) {
         auto pwm = Ps2CalcPwm<GoSlow>(right_y);
 
-        motors.B().SetPwm(pwm);
-        motors.D().SetPwm(pwm);
+        motors.B().SetTarget(pwm);
+        motors.D().SetTarget(pwm);
     } else if(right_y > Ps2MidY + Ps2Tolerance) {
         auto pwm = Ps2CalcPwm<GoSlow>(right_y);
 
-        motors.B().SetPwm(-pwm);
-        motors.D().SetPwm(-pwm);
+        motors.B().SetTarget(-pwm);
+        motors.D().SetTarget(-pwm);
+    } else {
+        motors.B().SetTarget(0);
+        motors.D().SetTarget(0);
     }
 }
 
@@ -288,23 +293,26 @@ static void ProcessPs2ForwardBackward() {
     auto left_y = Ps2Analog(PSS_RY);
 
     if(left_y < Ps2MidY - Ps2Tolerance) {
-        motors.A().SetPwm(SlowPwm);
-        motors.B().SetPwm(SlowPwm);
-        motors.C().SetPwm(SlowPwm);
-        motors.D().SetPwm(SlowPwm);
+        motors.A().SetTarget(SlowPwm);
+        motors.B().SetTarget(SlowPwm);
+        motors.C().SetTarget(SlowPwm);
+        motors.D().SetTarget(SlowPwm);
     } else if(left_y > Ps2MidY + Ps2Tolerance) {
-        motors.A().SetPwm(-SlowPwm);
-        motors.B().SetPwm(-SlowPwm);
-        motors.C().SetPwm(-SlowPwm);
-        motors.D().SetPwm(-SlowPwm);
+        motors.A().SetTarget(-SlowPwm);
+        motors.B().SetTarget(-SlowPwm);
+        motors.C().SetTarget(-SlowPwm);
+        motors.D().SetTarget(-SlowPwm);
+    } else {
+        motors.A().SetTarget(0);
+        motors.B().SetTarget(0);
+        motors.C().SetTarget(0);
+        motors.D().SetTarget(0);
     }
 }
 
 static constexpr double Ps2MeccanumRotateFactor = 0.3;
 
 static void ProcessPs2Meccanum() {
-    auto start = ReadTime();
-
     int right_x = Ps2Analog(PSS_RX);
     int right_y = Ps2Analog(PSS_RY);
     int left_x = Ps2Analog(PSS_LX);
@@ -314,10 +322,6 @@ static void ProcessPs2Meccanum() {
     int ry = Ps2IsStickMoved(right_y) ? Ps2MidY - right_y : 0;
     double lx = Ps2IsStickMoved(left_x) ? left_x - Ps2MidX : 0;
     
-    if(!rx & !ry && !lx) {
-        return;
-    }
-
     // Calculate intensities. They are normalized.
     auto angle = atan2(ry, rx);
 
@@ -341,19 +345,42 @@ static void ProcessPs2Meccanum() {
     auto total_pwm = MotorCount * ps2_max_pwm;
     auto motor_max_pwm = min(MotorMaxPwm, ps2_max_pwm * MotorMaxOverFactor);
 
-    auto end = ReadTime();
-    Serial.println(end - start, DEC);
+    motors.A().SetTarget(BoundedValue(total_pwm * va / total, motor_max_pwm));
+    motors.B().SetTarget(BoundedValue(total_pwm * vb / total, motor_max_pwm));
+    motors.C().SetTarget(BoundedValue(total_pwm * vc / total, motor_max_pwm));
+    motors.D().SetTarget(BoundedValue(total_pwm * vd / total, motor_max_pwm));
+}
 
-    motors.A().SetBoundedPwm(
-        total_pwm * va / total,
-        motor_max_pwm);
-    motors.B().SetBoundedPwm(
-        total_pwm * vb / total,
-        motor_max_pwm);
-    motors.C().SetBoundedPwm(
-        total_pwm * vc / total,
-        motor_max_pwm);
-    motors.D().SetBoundedPwm(
-        total_pwm * vd / total,
-        motor_max_pwm);
+static int BoundedValue(int val, int abs_bound) {
+    if(val < 0) {
+        return max(val, -abs_bound);
+    }
+
+    return min(val, abs_bound);
+}
+
+//
+// Stats.
+//
+static void PrintStats() {
+    // PrintMotorStats(motors.A());
+    // Serial.print(" ");
+    // PrintMotorStats(motors.B());
+    // Serial.print(" ");
+    // PrintMotorStats(motors.C());
+    // Serial.print(" ");
+    // PrintMotorStats(motors.D());
+
+    //Serial.println("");
+}
+
+template<typename Motor>
+static void PrintMotorStats(const Motor &motor) {
+    Serial.print(motor.GetName());
+    Serial.print(" rpm: ");
+    Serial.print(motor.CurrentRpm(), DEC);
+    Serial.print(" target: ");
+    Serial.print(motor.TargetRpm(), DEC);
+    Serial.print(" pwm: ");
+    Serial.print(motor.CurrentPwm(), DEC);
 }

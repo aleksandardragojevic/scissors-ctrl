@@ -4,6 +4,8 @@
 // author: alekd
 //
 
+#pragma once
+
 #include "smooth_servo_timed.h"
 #include "scissors_time.h"
 
@@ -48,6 +50,14 @@ public:
     TimeUnits LoopProcess(TimeUnits now) {
         now = lr.LoopProcess(now);
         return ud.LoopProcess(now);
+    }
+
+    void StopLeftRight() {
+        lr.Stop();
+    }
+
+    void StopUpDown() {
+        ud.Stop();
     }
 
 private:

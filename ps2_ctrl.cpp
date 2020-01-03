@@ -7,6 +7,7 @@
 #include "Arduino.h"
 
 #include "ps2_ctrl.h"
+#include "log.h"
 
 // pin definitions
 #define PS2_DAT 52
@@ -64,30 +65,28 @@ static void DoSetup() {
   byte error = ps2x.config_gamepad(PS2_CLK, PS2_CMD, PS2_SEL, PS2_DAT, ps2_pressures, ps2_rumble);
 
   if (error == 0) {
-    Serial.print("Found Controller, configured successful ");
-    Serial.print("pressures = ");
+    LogPs2("Found Controller, configured successful ");
+    LogPs2("pressures = ");
     if (ps2_pressures)
-      Serial.print("true ");
+      LogPs2("true ");
     else
-      Serial.print("false ");
-    Serial.print("rumble = ");
+      LogPs2("false ");
+    LogPs2("rumble = ");
     if (ps2_rumble)
-      Serial.println("true");
+      LogPs2("true");
     else
-      Serial.println("false");
+      LogPs2("false");
   } else if (error == 1)
   {
-    Serial.println("No controller found, check wiring, see readme.txt to enable debug. visit www.billporter.info for troubleshooting tips");   
+    LogPs2Ln("No controller found, check wiring, see readme.txt to enable debug. visit www.billporter.info for troubleshooting tips");   
     ps2_reset_func();
   }
 
   else if (error == 2)
-    Serial.println("Controller found but not accepting commands. see readme.txt to enable debug. Visit www.billporter.info for troubleshooting tips");
+    LogPs2Ln("Controller found but not accepting commands. see readme.txt to enable debug. Visit www.billporter.info for troubleshooting tips");
 
   else if (error == 3)
-    Serial.println("Controller refusing to enter Pressures mode, may not support it. ");
-
-//  Serial.print(ps2x.Analog(1), HEX);
+    LogPs2Ln("Controller refusing to enter Pressures mode, may not support it. ");
 
   byte type = 0;
 
@@ -95,16 +94,16 @@ static void DoSetup() {
         type = ps2x.readType();
         switch (type) {
         case 0:
-            Serial.print("Unknown Controller type found ");
+            LogPs2Ln("Unknown Controller type found ");
             break;
         case 1:
-            Serial.print("DualShock Controller found ");
+            LogPs2Ln("DualShock Controller found ");
             break;
         case 2:
-            Serial.print("GuitarHero Controller found ");
+            LogPs2Ln("GuitarHero Controller found ");
             break;
         case 3:
-            Serial.print("Wireless Sony DualShock Controller found ");
+            LogPs2Ln("Wireless Sony DualShock Controller found ");
             break;
         }
     }

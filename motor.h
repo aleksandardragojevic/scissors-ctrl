@@ -33,14 +33,10 @@ public:
     }
 
     void SetPwm(int val) {
-        SetBoundedPwm(val, MaxAbsPwm);
-    }
-
-    void SetBoundedPwm(int val, int abs_bound) {
         if(val < 0) {
-            pwm = max(val, -abs_bound);
+            pwm = max(val, -MaxAbsPwm);
         } else {
-            pwm = min(val, abs_bound);
+            pwm = min(val, MaxAbsPwm);
         }
     }
 

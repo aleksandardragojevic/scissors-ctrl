@@ -30,7 +30,6 @@ public:
         smooth_servo.Setup();
 
         move_period = MoveMinPeriod;
-        is_off_time_set = false;
 
         SetMoveTime();
     }
@@ -45,20 +44,13 @@ public:
 
     void Up(byte step) {
         smooth_servo.Up(step);
-        SetOffTimeout();
     }
 
     void Down(byte step) {
         smooth_servo.Down(step);
-        SetOffTimeout();
     }
 
     TimeUnits LoopProcess(TimeUnits now) {
-        if(is_off_time_set && IsTimeAfter(now, off_time)) {
-            Stop();
-            is_off_time_set = false;
-        }
-
         if(IsTimeAfter(now, move_time)) {
             smooth_servo.Move();
 
@@ -98,20 +90,13 @@ private:
     void SetMoveTime(TimeUnits now) {
         move_time = now + move_period;
     }
-
-    void SetOffTimeout() {
-        is_off_time_set = true;
-        off_time = ReadTime() + OffDelay;
-    }
-    
+   
     //
     // Data.
     //
     WrappedServo &smooth_servo;
     TimeUnits move_period;
     TimeUnits move_time;
-    bool is_off_time_set;
-    TimeUnits off_time;
 
     static SmoothServoTimed instance;
 };

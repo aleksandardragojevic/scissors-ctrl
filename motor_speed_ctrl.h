@@ -51,19 +51,22 @@ public:
 
         int pwm;
         int err = 0;
-        int delta_p = 0;
-        int delta_i = 0;
-        int delta_d = 0;
+        int pwm_p = 0;
+        int pwm_i = 0;
+        int pwm_d = 0;
 
         if(target_rpm) {
             err = target_rpm - encoder.Rpm();
             err_sum += err;
 
-            delta_p = err * KP;
-            delta_i = err_sum * KI;
-            delta_d = (err - err_last) * KD;
+            pwm_p = err * KP;
+            pwm_i = err_sum * KI;
 
-            pwm = motor.GetPwm() + delta_p + delta_i + delta_d;
+            if(err_last) {
+                pwm_d = (err - err_last) * KD;
+            }
+
+            pwm = pwm_p + pwm_i + pwm_d;
 
             err_last = err;
         } else {
@@ -83,13 +86,13 @@ public:
         Serial.print(" ");
         // Serial.print(GetErrSum(), DEC);
         // Serial.print(" ");
-        Serial.print(delta_p, DEC);
+        Serial.print(pwm_p, DEC);
         Serial.print(" ");
-        Serial.print(delta_i, DEC);
+        Serial.print(pwm_i, DEC);
         Serial.print(" ");
-        Serial.print(delta_d, DEC);
+        Serial.print(pwm_d, DEC);
         Serial.print(" ");
-        Serial.print(delta_p + delta_d + delta_i, DEC);
+        Serial.print(pwm, DEC);
         Serial.print(" ");
         Serial.println("");
         // debug stats
@@ -137,10 +140,9 @@ private:
     //
     // Constants.
     //
-    static constexpr float KP = 0.3;
-    //static constexpr float KI = 0.02;
-    static constexpr float KI = 0;
-    static constexpr float KD = 0.4;
+    static constexpr float KP = 0.4;
+    static constexpr float KI = 0.22;
+    static constexpr float KD = 0.3;
 
     //
     // Types.

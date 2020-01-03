@@ -85,10 +85,10 @@ void setup() {
     // Serial.print("pwm ");
     Serial.print("err ");
     // Serial.print("err-sum ");
-    Serial.print("delta-p ");
-    Serial.print("delta-i ");
-    Serial.print("delta-d ");
-    Serial.print("delta ");
+    Serial.print("pwm-p ");
+    Serial.print("pwm-i ");
+    Serial.print("pwm-d ");
+    Serial.print("pwm ");
     Serial.println("");
 }
 

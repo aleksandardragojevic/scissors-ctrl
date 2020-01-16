@@ -7,6 +7,8 @@
 
 static constexpr bool GoSlow = false;
 
+#include <Wire.h>
+
 #include "defs.h"
 #include "scissors_time.h"
 #include "ps2_ctrl.h"
@@ -14,12 +16,17 @@ static constexpr bool GoSlow = false;
 #include "camera_servos.h"
 #include "ab_encoder.h"
 #include "log.h"
+// #include "laser_range_sensor.h"
+// #include "gyro.h"
 
 static constexpr bool DontMoveMotors = false;
 auto &motors = WheelMotors<DontMoveMotors>::Instance();
 
 static constexpr bool DontMoveCameraServos = false;
 auto &camera_servos = CameraServos<DontMoveCameraServos>::Instance();
+
+// LaserRangeSensor laser_range_sensor;
+// auto &gyro = Gyro<>::Instance();
 
 //
 // Constants.
@@ -69,6 +76,8 @@ void setup() {
     Serial.begin(115200);
     Serial.println("Starting Scissors controller");
 
+    Wire.begin();
+
     // give some time for ps2 module to start
     delay(300);
 
@@ -78,18 +87,16 @@ void setup() {
 
     camera_servos.Setup();
 
+    //laser_range_sensor.Setup();
 
+    //gyro.Setup();
 
-    // Serial.print("current-rpm ");
-    // Serial.print("target-rpm ");
-    // Serial.print("pwm ");
-    Serial.print("err ");
-    // Serial.print("err-sum ");
-    Serial.print("pwm-p ");
-    Serial.print("pwm-i ");
-    Serial.print("pwm-d ");
-    Serial.print("pwm ");
-    Serial.println("");
+    LogMotorPid("err ");
+    LogMotorPid("pwm-p ");
+    LogMotorPid("pwm-i ");
+    LogMotorPid("pwm-d ");
+    LogMotorPid("pwm ");
+    LogMotorPidLn("");
 }
 
 void loop() {
@@ -117,6 +124,12 @@ void loop() {
 
     // no need to sleep - keep servicing IO as fast as we can
     // and use the per-section time keeping to know when to check them
+
+    //Serial.print(laser_range_sensor.ReadMm(), DEC);
+    //Serial.println("");
+
+    //gyro.Read();
+    //gyro.Print();
 }
 
 //
@@ -363,24 +376,5 @@ static int BoundedValue(int val, int abs_bound) {
 // Stats.
 //
 static void PrintStats() {
-    // PrintMotorStats(motors.A());
-    // Serial.print(" ");
-    // PrintMotorStats(motors.B());
-    // Serial.print(" ");
-    // PrintMotorStats(motors.C());
-    // Serial.print(" ");
-    // PrintMotorStats(motors.D());
-
-    //Serial.println("");
-}
-
-template<typename Motor>
-static void PrintMotorStats(const Motor &motor) {
-    Serial.print(motor.GetName());
-    Serial.print(" rpm: ");
-    Serial.print(motor.CurrentRpm(), DEC);
-    Serial.print(" target: ");
-    Serial.print(motor.TargetRpm(), DEC);
-    Serial.print(" pwm: ");
-    Serial.print(motor.CurrentPwm(), DEC);
+    // empty for now
 }

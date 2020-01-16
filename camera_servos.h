@@ -64,8 +64,8 @@ private:
     //
     // Types.
     //
-    using LeftRight = SmoothServoTimed<'Z', 48, 10, 180, DontMove>;
-    using UpDown = SmoothServoTimed<'X', 47, 10, 130, DontMove>;
+    using LeftRight = SmoothServoTimed<'Z', 48, 0, 180, DontMove>;
+    using UpDown = SmoothServoTimed<'X', 47, 0, 180, DontMove, 0>;
 
     //
     // Functions.

@@ -9,6 +9,7 @@
 #include "motor.h"
 #include "ab_encoder.h"
 #include "scissors_time.h"
+#include "log.h"
 
 template<
     char Name,
@@ -75,27 +76,17 @@ public:
             err_last = 0;
         }
 
-        // debug stats
-        // Serial.print(CurrentRpm(), DEC);
-        // Serial.print(" ");
-        // Serial.print(TargetRpm(), DEC);
-        // Serial.print(" ");
-        // Serial.print(CurrentPwm(), DEC);
-        // Serial.print(" ");
-        Serial.print(err, DEC);
-        Serial.print(" ");
-        // Serial.print(GetErrSum(), DEC);
-        // Serial.print(" ");
-        Serial.print(pwm_p, DEC);
-        Serial.print(" ");
-        Serial.print(pwm_i, DEC);
-        Serial.print(" ");
-        Serial.print(pwm_d, DEC);
-        Serial.print(" ");
-        Serial.print(pwm, DEC);
-        Serial.print(" ");
-        Serial.println("");
-        // debug stats
+        LogMotorPid(err, DEC);
+        LogMotorPid(" ");
+        LogMotorPid(pwm_p, DEC);
+        LogMotorPid(" ");
+        LogMotorPid(pwm_i, DEC);
+        LogMotorPid(" ");
+        LogMotorPid(pwm_d, DEC);
+        LogMotorPid(" ");
+        LogMotorPid(pwm, DEC);
+        LogMotorPid(" ");
+        LogMotorPidLn("");
 
         motor.SetPwm(pwm);
         motor.Apply();

@@ -15,6 +15,8 @@
 #define PS2_SEL 53
 #define PS2_CLK 50
 
+#define ERROR_ANALOG_RET 127
+
 // local variables
 static PS2X ps2x;
 
@@ -23,6 +25,7 @@ static bool ps2_rumble;
 static bool ps2_pressures;
 static bool ps2_small_vibrate;
 static byte ps2_large_vibrate;
+static bool ps2_error;
 
 // Mystery: I don't understand why declaring and invoking this function in case
 //          of an error makes things work. If anything, I would think this would
@@ -116,18 +119,30 @@ bool Ps2IsReady() {
 }
 
 void Ps2Read() {
-    ps2x.read_gamepad(ps2_small_vibrate, ps2_large_vibrate);
+    ps2_error = !ps2x.read_gamepad(ps2_small_vibrate, ps2_large_vibrate);
 }
 
 bool Ps2Button(uint16_t button) {
+    if(ps2_error) {
+        return false;
+    }
+
     return ps2x.Button(button);
 }
 
 bool Ps2ButtonPressed(uint16_t button) {
+    if(ps2_error) {
+        return false;
+    }
+
     return ps2x.ButtonPressed(button);
 }
 
 byte Ps2Analog(byte button) {
+    if(ps2_error) {
+        return ERROR_ANALOG_RET;
+    }
+
     return ps2x.Analog(button);
 }
 
